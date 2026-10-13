@@ -1,48 +1,42 @@
-# Question 27 — Production SSE Streaming Inference Gateway & Cost Accounting
+﻿# Question 27 — SSE Inference Gateway & Cost Accounting
 
-A resilient, low-latency Server-Sent Events (SSE) inference gateway with semantic caching, time-to-first-token (TTFT) instrumentation, and granular cost accounting.
+A resilient Server-Sent Events (SSE) inference gateway with anti-buffering headers, semantic caching, TTFT tracking, and asymmetric token billing.
 
 ---
 
-## 1. System Architecture Overview
+## Architecture Flow
 
-```text
-Client (Browser / EventSource / mock_client.py)
-   │
-   │  GET /v1/stream?prompt=...
-   ▼
-[ FastAPI Gateway (app.py) ]
-   ├── Anti-buffering Headers (Cache-Control, X-Accel-Buffering, Connection)
-   │
-   ├── 1. Check Semantic Cache (cache.py)
-   │     ├── Offline Hash Embeddings (Stemming + Shingles, 128-d)
-   │     ├── Cosine Similarity Calculation
-   │     └── Score >= 0.70? ──► [HIT] Stream stored completion (Fast Path)
-   │
-   └── 2. Provider Invocation (providers.py) [MISS]
-         ├── get_provider() (Configuration-based factory)
-         ├── MockLLMProvider (first_token_delay + inter_token_delay)
-         └── Stream Token-by-Token ──► Yield W3C SSE Chunks
-               │
-               ├── Emit Terminal Event: event: done\ndata: [DONE]\n\n
-               └── On Mid-stream failure: event: error\ndata: {"error": ...}\n\n
-   │
-   ▼
-[ Metrics & Cost Accounting Ledger (metrics.py) ]
-   ├── TTFT p50/p95 (monotonic precision timers)
-   ├── Total Duration p50/p95
-   ├── Asymmetric Token Billing ($0.0015 input / $0.0020 output per 1K)
-   └── Spend vs Avoided Spend (Zero-division safe)
+Client -> GET /v1/stream?prompt=... -> FastAPI Gateway
+  |-- Cache Check (Cosine >= 0.70): HIT -> instant completion stream
+  \-- Provider Stream (MISS): Token-by-token chunks -> 'event: done'
 
- 2. Part A — The Streaming Endpoint & Wire ProtocolSSE Wire Protocol ConformanceStreaming over Server-Sent Events requires strict adherence to the W3C EventSource standard. The gateway streams tokens chunk-by-chunk directly as generated:Format: Every event chunk is strictly framed with data: <json>\n\n (double newline delimiter).Event Types:Regular tokens: data: {"token": "word "}\n\nExplicit terminal event: event: done\ndata: [DONE]\n\nMid-stream failure: event: error\ndata: {"error": "..."}\n\nProxy Anti-Buffering HeadersIntermediate proxies, load balancers, and reverse proxies (e.g., Nginx, Envoy, Cloudflare) default to buffering chunked HTTP transfers. We explicitly inject the following response headers:HeaderPurpose & Architectural FunctionContent-Type: text/event-stream; charset=utf-8Signals the HTTP client and intermediate middleboxes to handle the body as an unbounded, persistent event stream rather than a discrete file download.Cache-Control: no-cache, no-transformno-cache prevents proxy caches from storing response chunks. no-transform strictly prohibits intermediate proxies from gzipping, compressing, or batching micro-chunks into larger packets.Connection: keep-aliveKeeps the underlying TCP socket connection open indefinitely across long intervals between token generations.X-Accel-Buffering: noSpecifically targets Nginx reverse proxies (proxy_buffering off), forcing Nginx to flush every token buffer immediately to the downstream client socket without waiting for buffer saturation (4KB/8KB buffers).Terminal Event DesignThe stream concludes with an explicit terminal event:Plaintextevent: done
-data: [DONE]
-Why an explicit terminal event is required:Without an explicit marker, a client reading an open connection cannot distinguish between:A completed response where the LLM finished answering.A network timeout, upstream process crash, or severed TCP socket that silently stalled mid-sentence.An explicit terminal event gives the client deterministic confirmation that the full output was safely delivered.Why HTTP Status Codes Cannot Be Used for Mid-Stream FailuresIn HTTP/1.1 chunked transfer encoding, response status codes and headers (HTTP/1.1 200 OK) are emitted at the start of the connection, before the response body begins.Once token generation has started and the client receives the first token, the HTTP status is already committed to the wire. If an upstream LLM provider crashes or severs its socket after 10 tokens:The gateway cannot rewrite the status code to 500 Internal Server Error or 502 Bad Gateway.Attempting to do so corrupts the TCP protocol stream.Handling: The gateway catches ProviderError mid-flight, emits an explicit SSE error event (event: error\ndata: {"error": "..."}\n\n), and cleanly terminates the stream. The client's event listener catches this event and handles the UI rollback.3. Part B — Provider AbstractionThe gateway defines a polymorphic interface BaseLLMProvider with two implementations:MockLLMProvider: Deterministic, offline provider simulating token production with realistic latency.RealLLMProvider: Authenticated remote provider stub.get_provider() factory: Selects RealLLMProvider if LLM_API_KEY is present in the environment; otherwise defaults to MockLLMProvider. No code change or edited constant required.Why Collapsing Delays Makes Part C UntestableMockLLMProvider intentionally separates two latency parameters:first_token_delay: Models prompt prefill / KV cache evaluation latency (e.g., 250ms).inter_token_delay: Models autoregressive token-by-token generation pace (e.g., 50ms).The Architectural Problem with Collapsing Them:If both delays are collapsed into a single uniform parameter (e.g., a flat 50ms per token):TTFT becomes indistinguishable from standard token pacing.An automated test harness cannot detect an implementation that buffers the entire response in memory. If a test is verifying whether buffering occurred, it relies on asserting that TTFT is significantly less than Total Duration.Separating first_token_delay and inter_token_delay ensures test suites can deterministically verify that the first token emits independently of total sequence generation length.4. Part C — Time to First Token (TTFT)Why TTFT is the Headline Metric (Not Total Duration)In conversational interfaces, human perception dictates responsiveness:Perceived Latency: Humans read at approximately 200 to 300 words per minute (around 4-5 words per second). As long as the first token arrives rapidly (<300ms) and subsequent tokens arrive at or above reading speed, the user perceives the system as instantaneous.Total Duration is Confounded by Output Length: A 500-token answer takes 5x longer to generate than a 100-token answer, even if the model is running at peak efficiency. Total duration measures completion length rather than system responsiveness.Therefore, TTFT is the gold-standard SLA headline metric for streaming inference gateways.Percentile Measurement & Zero Edge CasePercentiles (p50 and p95) are tracked separately for TTFT and total duration using time.perf_counter() monotonic timers.Specification Enforcement: calculate_percentile([], 95) returns None (not 0.0). Returning 0.0 for empty datasets is an anti-pattern that misrepresents missing data as zero latency in telemetry dashboards.5. Part D — Semantic Cache & Cost AccountingEmbedding Architecture & Empirical Threshold MeasurementThe gateway implements an offline, deterministic vector embedding engine using stemmed content-word hashing and character 3-gram shingles mapped to an L2-normalized 128-dimensional vector space.Measured Empirical Similarity MatrixWe benchmarked cosine similarity across pairs of prompts to select the threshold:Prompt APrompt BRelationshipMeasured Cosine Similarity"What is the capital of France?""Tell me France's capital city"Semantic Paraphrase0.768"Explain quantum computing""What is quantum computing in simple terms"Semantic Paraphrase0.781"What is the capital of France?""What is the capital of Germany?"Topical Variation0.420"What is the capital of France?""How do I bake sourdough bread?"Completely Unrelated0.000Threshold JustificationSelected Threshold: 0.70Safety Margin: A threshold of 0.70 cleanly separates true semantic paraphrases (>0.76) from topical variations (0.42) and unrelated queries (0.00).Failure Modes of Badly-Chosen ThresholdsThreshold Too High (e.g., 0.98):Failure Mode: False Negatives.A prompt like "Tell me France's capital city" misses the cache despite being identical in intent to "What is the capital of France?". The cache degenerates into an exact-string cache, defeating its purpose.Threshold Too Low (e.g., 0.35):Failure Mode: False Positives / Semantic Collisions.A prompt asking "What is the capital of Germany?" collides with the cached completion for France, returning completely incorrect answers to the end user.Cost Accounting: Separate Token Pricing vs Blended RatesToken TypeIllustrative Price per 1,000 TokensInput Tokens (Prompt)$0.0015Output Tokens (Completion)$0.0020(Note: Pricing values above are illustrative models for architectural cost accounting and do not represent a live provider price list).Why a Single Blended Rate FailsA blended rate (e.g., $0.0018 per 1K tokens across all tokens) fails because LLM infrastructure cost is asymmetric:Computational Difference: Prompt processing (KV cache prefill) is parallel matrix-matrix multiplication ($O(N)$ memory bandwidth bound), making it computationally cheaper. Output generation is sequential autoregressive decoding, consuming significantly more GPU compute cycles.Workload Distortion:In summarization workloads (e.g., 4,000 input tokens -> 100 output tokens), a blended rate severely overcharges or distorts cost analysis.In code generation or reasoning workloads (e.g., 50 input tokens -> 2,000 output tokens), a blended rate under-reports real GPU infrastructure costs.Avoided Spend Accounting: Tracking actual_spend_usd vs avoided_spend_usd accurately measures the real financial ROI of the semantic cache.6. Part E — CI & Client-Side MeasurementWhy Measure TTFT from the Client Rather Than the Server?Measuring TTFT inside the server captures only the application code execution time. It is blind to the outer network hop.Measuring from the client (mock_client.py) catches:Reverse-Proxy Buffer Regressions: If a proxy configuration error turns on response buffering (e.g., missing X-Accel-Buffering: no), server metrics show TTFT = 50ms, while real users experience TTFT = 2500ms.TCP Socket Overhead: Nagle's algorithm delay (TCP_NODELAY), socket flushing, and TLS handshake handoffs.Client-Side Deserialization Latency: Time required for consumer HTTP stream parsers to unpack chunked payloads.7. Verification & Local Execution1. Run Automated Pytest SuiteBashpytest Q27/test_gateway.py -v
-2. Start Gateway ServerBashuvicorn app:app --host 127.0.0.1 --port 8000
-3. Run Mock ClientBashpython mock_client.py
-4. Inspect Metrics EndpointBashcurl [http://127.0.0.1:8000/v1/metrics](http://127.0.0.1:8000/v1/metrics)
+---
 
-#### Commit Command:
-```powershell
-git add Q27/README.md
-git commit -m "docs(q27): add comprehensive documentation covering architectural questions and metrics"
-git push  
+## Key Design Decisions
+
+- Anti-Buffering Headers:
+  - Content-Type: text/event-stream; charset=utf-8
+  - Cache-Control: no-cache, no-transform
+  - Connection: keep-alive
+  - X-Accel-Buffering: no (disables reverse proxy buffering)
+- Terminal Event: Emits explicit 'event: done' with data '[DONE]' to separate completed streams from severed sockets.
+- Mid-Stream Failures: HTTP 200 commits before streaming; mid-stream errors emit 'event: error' chunk instead of rewriting status codes.
+- Latency Decoupling: Separates first_token_delay and inter_token_delay to strictly verify TTFT != duration.
+- Semantic Cache: Threshold 0.70 empirically separates paraphrases (>0.76) from distinct queries (<=0.42).
+- Cost Accounting: Split billing (.0015 input / .0020 output per 1k tokens) for accurate ROI tracking.
+
+---
+
+## Local Run & Verification
+
+1. Run Tests:
+   pytest Q27/test_gateway.py -v
+
+2. Start Server:
+   uvicorn app:app --host 127.0.0.1 --port 8000
+
+3. Run Client:
+   python mock_client.py
+
+4. Fetch Metrics:
+   curl http://127.0.0.1:8000/v1/metrics
