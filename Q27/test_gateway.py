@@ -2,12 +2,10 @@
 import json
 import pytest
 from httpx import AsyncClient, ASGITransport
-
 from app import app, cache, metrics
 from cache import SemanticCache, compute_deterministic_embedding, cosine_similarity
 from metrics import calculate_percentile, GatewayMetrics
 from providers import MockLLMProvider, ProviderError
-
 
 @pytest.mark.asyncio
 async def test_sse_wire_format_raw_body_parsing():
@@ -102,7 +100,6 @@ def test_cost_accounting_and_zero_traffic_division_safety():
     assert summary["cost_accounting"]["actual_spend_usd"] > 0
     assert summary["cost_accounting"]["avoided_spend_usd"] > 0
     assert summary["cost_accounting"]["savings_percentage"] == 50.0
-
 
 @pytest.mark.asyncio
 async def test_mid_stream_failure_emits_error_event():
