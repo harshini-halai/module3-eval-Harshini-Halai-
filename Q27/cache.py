@@ -6,16 +6,13 @@ import time
 from typing import Dict, List, Optional, Tuple
 import numpy as np
 
-
 STOP_WORDS = {
     "what", "is", "the", "of", "tell", "me", "a", "an", "in", "to", "for", "and", "do", "how", "can", "you", "please"
 }
 
-
 def stable_hash(token: str) -> int:
     """Fixed-seed deterministic hash independent of Python process restarts."""
     return int(hashlib.md5(token.encode("utf-8")).hexdigest(), 16)
-
 
 def tokenize_and_stem(text: str) -> List[str]:
     cleaned = text.lower().strip()
@@ -32,7 +29,6 @@ def tokenize_and_stem(text: str) -> List[str]:
             w = w[:-2]
         tokens.append(w)
     return tokens
-
 
 def compute_deterministic_embedding(text: str, dim: int = 128) -> np.ndarray:
     tokens = tokenize_and_stem(text)
@@ -53,7 +49,6 @@ def compute_deterministic_embedding(text: str, dim: int = 128) -> np.ndarray:
         vec = vec / norm
     return vec
 
-
 def cosine_similarity(v1: np.ndarray, v2: np.ndarray) -> float:
     dot = np.dot(v1, v2)
     norm1 = np.linalg.norm(v1)
@@ -61,7 +56,6 @@ def cosine_similarity(v1: np.ndarray, v2: np.ndarray) -> float:
     if norm1 == 0 or norm2 == 0:
         return 0.0
     return float(dot / (norm1 * norm2))
-
 
 class CacheEntry:
     def __init__(self, prompt: str, embedding: np.ndarray, completion: str, ttl_seconds: float):
@@ -74,7 +68,6 @@ class CacheEntry:
     def is_expired(self, now: Optional[float] = None) -> bool:
         current_time = now if now is not None else time.time()
         return (current_time - self.created_at) > self.ttl_seconds
-
 
 class SemanticCache:
     """
