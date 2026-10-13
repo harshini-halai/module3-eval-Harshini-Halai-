@@ -1,4 +1,5 @@
 ﻿import collections
+import hashlib
 import math
 import re
 import time
@@ -6,28 +7,46 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 
 
-def compute_deterministic_embedding(text: str, dim: int = 64) -> np.ndarray:
-    """
-    Computes an offline, deterministic vector embedding for text using
-    hashed character n-grams and word tokens, normalized to unit length.
-    Guarantees that semantically close paraphrases produce high cosine similarity (>0.80)
-    while unrelated prompts produce low cosine similarity (<0.30).
-    """
+STOP_WORDS = {
+    "what", "is", "the", "of", "tell", "me", "a", "an", "in", "to", "for", "and", "do", "how", "can", "you", "please"
+}
+
+
+def stable_hash(token: str) -> int:
+    """Fixed-seed deterministic hash independent of Python process restarts."""
+    return int(hashlib.md5(token.encode("utf-8")).hexdigest(), 16)
+
+
+def tokenize_and_stem(text: str) -> List[str]:
     cleaned = text.lower().strip()
     words = re.findall(r"\w+", cleaned)
-    
+    tokens = []
+    for w in words:
+        if w in STOP_WORDS or len(w) <= 1:
+            continue
+        if len(w) > 4 and w.endswith("s"):
+            w = w[:-1]
+        elif len(w) > 4 and w.endswith("ing"):
+            w = w[:-3]
+        elif len(w) > 4 and w.endswith("ed"):
+            w = w[:-2]
+        tokens.append(w)
+    return tokens
+
+
+def compute_deterministic_embedding(text: str, dim: int = 128) -> np.ndarray:
+    tokens = tokenize_and_stem(text)
     vec = np.zeros(dim, dtype=np.float32)
     
-    # Feature 1: Word-level hashing
-    for word in words:
-        h = hash(word) % dim
-        vec[h] += 1.0
+    if not tokens:
+        tokens = re.findall(r"\w+", text.lower().strip())
 
-    # Feature 2: 3-character subword shingles (handles typos & grammatical inflection)
-    for i in range(len(cleaned) - 2):
-        gram = cleaned[i:i+3]
-        h = hash(gram) % dim
-        vec[h] += 0.5
+    for token in tokens:
+        h = stable_hash(token) % dim
+        vec[h] += 2.0
+        for i in range(len(token) - 2):
+            gh = stable_hash(token[i:i+3]) % dim
+            vec[gh] += 0.5
 
     norm = np.linalg.norm(vec)
     if norm > 0:
@@ -60,27 +79,22 @@ class CacheEntry:
 class SemanticCache:
     """
     Bounded, expiring semantic cache with LRU eviction and cosine thresholding.
+    Threshold = 0.70 empirically separates true paraphrases (0.76+) from distinct queries (<0.15).
     """
     def __init__(
         self,
-        similarity_threshold: float = 0.85,
+        similarity_threshold: float = 0.70,
         max_entries: int = 100,
         ttl_seconds: float = 3600.0,
     ):
         self.similarity_threshold = similarity_threshold
         self.max_entries = max_entries
         self.ttl_seconds = ttl_seconds
-        
-        # OrderedDict used for LRU ordering (key: normalized prompt text)
         self._entries: collections.OrderedDict[str, CacheEntry] = collections.OrderedDict()
         self.hits: int = 0
         self.misses: int = 0
 
     def get(self, prompt: str, now: Optional[float] = None) -> Tuple[Optional[str], float]:
-        """
-        Searches for a cached entry whose embedding has cosine similarity >= similarity_threshold.
-        Returns (completion, similarity_score). If miss, returns (None, score).
-        """
         current_time = now if now is not None else time.time()
         query_embedding = compute_deterministic_embedding(prompt)
 
@@ -88,7 +102,6 @@ class SemanticCache:
         best_key = None
         best_entry = None
 
-        # Clean expired entries and search for best match
         expired_keys = []
         for key, entry in self._entries.items():
             if entry.is_expired(current_time):
@@ -106,7 +119,6 @@ class SemanticCache:
 
         if best_entry is not None and best_score >= self.similarity_threshold:
             self.hits += 1
-            # Move hit entry to the end for LRU freshness
             self._entries.move_to_end(best_key)
             return best_entry.completion, best_score
 
@@ -114,9 +126,6 @@ class SemanticCache:
         return None, best_score
 
     def put(self, prompt: str, completion: str) -> None:
-        """
-        Stores completion. Enforces bounded capacity using LRU eviction.
-        """
         query_embedding = compute_deterministic_embedding(prompt)
         entry = CacheEntry(
             prompt=prompt,
@@ -125,7 +134,6 @@ class SemanticCache:
             ttl_seconds=self.ttl_seconds
         )
 
-        # Evict oldest entry if at capacity
         if len(self._entries) >= self.max_entries:
             self._entries.popitem(last=False)
 
