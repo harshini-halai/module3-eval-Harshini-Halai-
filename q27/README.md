@@ -39,4 +39,4 @@ Client -> GET /v1/stream?prompt=... -> FastAPI Gateway
    python mock_client.py
 
 4. Fetch Metrics:
-   curl http://127.0.0.1:8000/v1/metrics
+   curl <http://127.0.0.1:8000/v1/metrics>
