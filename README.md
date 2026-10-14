@@ -17,3 +17,5 @@ Follow instructions in `q26/q26_notes.md`.
 1. Install dependencies:
 
    pip install -r q27/requirements.txt
+
+2. Follow instructions in `q27/q27_notes.md`.
