@@ -15,6 +15,5 @@ Follow instructions in `q26/q26_notes.md`.
 ### Question 27
 
 1. Install dependencies:
-   ```bash
+
    pip install -r q27/requirements.txt
-   ```
