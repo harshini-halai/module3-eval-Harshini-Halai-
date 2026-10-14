@@ -31,9 +31,7 @@ class TransientError(Exception):
     pass
 
 
-# ---------------------------------------------------------------------------
 # Part B: Signature Verification
-# ---------------------------------------------------------------------------
 
 def verify_signature(
     raw_body: bytes,
@@ -81,10 +79,7 @@ def verify_signature(
         raise SignatureVerificationError("Signature digest mismatch", status_code=401)
 
 
-# ---------------------------------------------------------------------------
 # Part C: Thread-safe In-Process Idempotency Store
-# ---------------------------------------------------------------------------
-
 class IdempotencyStore:
     def __init__(self):
         self._lock = asyncio.Lock()
@@ -123,9 +118,7 @@ class IdempotencyStore:
             return self._store.get(event_id)
 
 
-# ---------------------------------------------------------------------------
 # Part D: Retries, Exponential Backoff with Full Jitter, and DLQ
-# ---------------------------------------------------------------------------
 
 def calculate_backoff_delay(
     attempt: int,
@@ -160,10 +153,7 @@ class DeadLetterQueue:
         async with self._lock:
             return list(self._entries)
 
-
-# ---------------------------------------------------------------------------
 # Worker Pipeline
-# ---------------------------------------------------------------------------
 
 async def process_event_with_resilience(
     event_id: str,

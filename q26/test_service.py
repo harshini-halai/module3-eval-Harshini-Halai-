@@ -39,9 +39,7 @@ def create_signed_headers(body_bytes: bytes, secret: str = TEST_SECRET, timestam
     }
 
 
-# ---------------------------------------------------------------------------
 # Part B Tests: Cryptography & Whitespace Bug Prevention
-# ---------------------------------------------------------------------------
 
 def test_signature_preserves_raw_byte_invariance():
     """
@@ -76,10 +74,7 @@ def test_signature_replay_attack_rejected():
             current_time_fn=lambda: stale_ts + 301.0
         )
 
-
-# ---------------------------------------------------------------------------
 # Part C Tests: Concurrency Verification
-# ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
 async def test_concurrent_duplicate_deliveries_race_condition():
@@ -106,9 +101,7 @@ async def test_concurrent_duplicate_deliveries_race_condition():
         assert status_codes.count(200) == 9
 
 
-# ---------------------------------------------------------------------------
 # Part D Tests: Exponential Backoff, Jitter, Injectable Time, DLQ
-# ---------------------------------------------------------------------------
 
 def test_exponential_backoff_and_jitter_bounds():
     # Deterministic mock rng that picks the upper bound
@@ -188,9 +181,7 @@ async def test_resilience_pipeline_permanent_error_bypasses_retry():
     assert entries[0]["attempts"] == 1
 
 
-# ---------------------------------------------------------------------------
 # Part A: Health and Readiness Probes
-# ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
 async def test_probes_distinction(monkeypatch):

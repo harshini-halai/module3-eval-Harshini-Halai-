@@ -40,10 +40,7 @@ def mock_downstream_service(payload: Dict[str, Any]):
     elif action == "permanent":
         raise PermanentError("Downstream entity schema rejected")
 
-
-# ---------------------------------------------------------------------------
 # Part A: Observability Probes
-# ---------------------------------------------------------------------------
 
 @app.get("/healthz", status_code=status.HTTP_200_OK)
 def healthz():
@@ -67,10 +64,7 @@ def readyz():
 
     return {"status": "ready"}
 
-
-# ---------------------------------------------------------------------------
 # Part A, B, C, E: Ingestion Endpoint
-# ---------------------------------------------------------------------------
 
 @app.post("/webhooks/events")
 async def handle_webhook(request: Request, background_tasks: BackgroundTasks):
@@ -131,9 +125,7 @@ async def handle_webhook(request: Request, background_tasks: BackgroundTasks):
     )
 
 
-# ---------------------------------------------------------------------------
 # Part D: DLQ Inspection Endpoint
-# ---------------------------------------------------------------------------
 
 @app.get("/dlq", status_code=status.HTTP_200_OK)
 async def get_dlq_records():
