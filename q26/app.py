@@ -17,7 +17,7 @@ from core import (
 app = FastAPI(title="Production Webhook Ingestion Service")
 
 # Sourced strictly from environment variable
-WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "")
+WEBHOOK_SECRET = os.getenv("SECRET")
 
 # In-process singleton stores
 idempotency_store = IdempotencyStore()

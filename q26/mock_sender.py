@@ -6,7 +6,7 @@ import time
 import httpx
 
 TARGET_URL = os.getenv("WEBHOOK_URL", "http://127.0.0.1:8000/webhooks/events")
-SECRET = os.getenv("WEBHOOK_SECRET", "prod_webhook_signing_secret_xyz123")
+SECRET = os.getenv("WEBHOOK_SECRET")
 
 
 def sign_payload(body_bytes: bytes, timestamp_str: str, secret_key: str) -> str:

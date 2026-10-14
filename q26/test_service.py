@@ -16,7 +16,6 @@ from core import (
     SignatureVerificationError,
     PermanentError,
     TransientError,
-    EventStatus,
 )
 
 TEST_SECRET = "test_signing_secret_998877"
