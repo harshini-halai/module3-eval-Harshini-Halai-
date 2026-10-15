@@ -47,6 +47,35 @@ class SemanticCache:
             self.entries.pop(0)
         self.entries.append((query, get_text_embedding(query), response_chunks))
 
+    # SemanticCache class ke andar add karein:
+    def put(self, query: str, response):
+        """Alias for test compatibility"""
+        # Agar response string hai aur chunks chahiye, ya list hai
+        if isinstance(response, str):
+            # chunks list me convert ya direct store
+            response_chunks = [response]
+        else:
+            response_chunks = response
+            
+        if hasattr(self, 'store'):
+            self.store(query, response_chunks)
+        elif hasattr(self, 'set'):
+            self.set(query, response_chunks)
+        else:
+            # direct append fallback
+            if len(self.entries) >= getattr(self, 'max_entries', 100):
+                self.entries.pop(0)
+            self.entries.append((query, compute_deterministic_embedding(query), response_chunks))
+
+    def get(self, query: str):
+        """Alias for lookup"""
+        if hasattr(self, 'lookup'):
+            res = self.lookup(query)
+            if res is not None and isinstance(res, list) and len(res) == 1:
+                return res[0]
+            return res
+        return None
+
     # Alias for set
     def set(self, query: str, response_chunks: List[str]) -> None:
         self.store(query, response_chunks)
