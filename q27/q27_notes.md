@@ -55,12 +55,13 @@ python -m pytest q27/test_gateway.py -v
 ### Expected Output
 
 ```text
-q27/test_gateway.py::test_cold_query_streams_and_caches PASSED
-q27/test_gateway.py::test_semantic_cache_hit_near_duplicate PASSED
-q27/test_gateway.py::test_ttft_measurement PASSED
-q27/test_gateway.py::test_different_query_cache_miss PASSED
-
-============================== 4 passed in 0.XXs ==============================
+q27/test_gateway.py::test_sse_wire_format_raw_body_parsing PASSED
+q27/test_gateway.py::test_anti_buffering_ttft_is_strictly_less_than_total_duration PASSED
+q27/test_gateway.py::test_percentile_empty_list_does_not_return_zero PASSED
+q27/test_gateway.py::test_semantic_cache_hit_and_badly_chosen_threshold PASSED
+q27/test_gateway.py::test_cost_accounting_and_zero_traffic_division_safety PASSED
+q27/test_gateway.py::test_mid_stream_failure_emits_error_event PASSED
+============================== 6 passed in 0.XXs ==============================
 ```
 
 ---

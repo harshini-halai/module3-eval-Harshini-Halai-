@@ -2,7 +2,10 @@
 import json
 import pytest
 from httpx import AsyncClient, ASGITransport
-from app import app, cache, metrics
+try:
+    from q27.app import app, cache, metrics
+except ModuleNotFoundError:
+    from app import app, cache, metrics
 from cache import SemanticCache, compute_deterministic_embedding, cosine_similarity
 from metrics import calculate_percentile, GatewayMetrics
 from providers import MockLLMProvider, ProviderError

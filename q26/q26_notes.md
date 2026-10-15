@@ -166,19 +166,19 @@ Run the full pytest suite verifying HMAC-SHA256 crypto, timestamp tolerance, ide
   ```powershell
   $env:PYTHONPATH="."
   python -m pytest q26/test_service.py -v
-  ```
+  
 
 
-### Expected Test Results:
+### Expected Test Results
 
-
-q26/test_service.py::test_valid_webhook_delivery PASSED
-q26/test_service.py::test_tampered_payload_rejected PASSED
-q26/test_service.py::test_replay_attack_rejected PASSED
-q26/test_service.py::test_idempotency_deduplication PASSED
-q26/test_service.py::test_transient_retry_and_dlq PASSED
-
-============================== 5 passed in 0.XXs ==============================
+q26/test_service.py::test_signature_preserves_raw_byte_invariance PASSED
+q26/test_service.py::test_signature_replay_attack_rejected PASSED
+q26/test_service.py::test_concurrent_duplicate_deliveries_race_condition PASSED
+q26/test_service.py::test_exponential_backoff_and_jitter_bounds PASSED
+q26/test_service.py::test_resilience_pipeline_transient_retry_and_dlq PASSED
+q26/test_service.py::test_resilience_pipeline_permanent_error_bypasses_retry PASSED
+q26/test_service.py::test_probes_distinction PASSED
+============================== 7 passed in 0.XXs ==============================
 
 ## 5. Live Receiver & Mock Sender Execution
 
@@ -226,7 +226,7 @@ Open a second terminal window or tab (`Cmd + T` on Mac / New Tab in Windows Term
   python q26/mock_sender.py
   ```
 
-### Expected Output for All 7 Scenarios:
+### Expected Output for All 7 Scenarios
 
 ```text
 --- Scenario: 1. Valid, new event (Expect 2xx) ---
