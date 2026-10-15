@@ -1,9 +1,7 @@
 ﻿import math
 from typing import List, Optional, Dict, Any
 
-
-# NOTE: Prices below are purely illustrative for cost accounting modeling and
-# are NOT a live or official provider price list.
+# NOTE: Illustrative pricing for cost accounting modeling
 PRICE_PER_1K_INPUT_TOKENS = 0.0015
 PRICE_PER_1K_OUTPUT_TOKENS = 0.0020
 
@@ -11,7 +9,6 @@ PRICE_PER_1K_OUTPUT_TOKENS = 0.0020
 def calculate_percentile(values: List[float], p: float) -> Optional[float]:
     """
     Calculates the p-th percentile of a list of floats.
-    As required by Part C: percentile([], 95) must NOT return 0.0.
     Returns None for empty collections to avoid misrepresenting absence of data as 0 latency.
     """
     if not values:
@@ -61,9 +58,8 @@ class GatewayMetrics:
             self.total_output_tokens += completion_tokens
             self.actual_spend += cost
 
-    def get_summary(self, cache_hit_rate: float) -> Dict[str, Any]:
+    def get_summary(self, cache_hit_rate: float = 0.0) -> Dict[str, Any]:
         potential_total = self.actual_spend + self.avoided_spend
-        # Handle zero-traffic without division by zero error
         if potential_total > 0:
             savings_pct = (self.avoided_spend / potential_total) * 100.0
         else:
@@ -90,3 +86,6 @@ class GatewayMetrics:
                 },
             },
         }
+
+# Alias taaki dono names se import kaam kare:
+MetricsTracker = GatewayMetrics
