@@ -1,25 +1,42 @@
 ﻿import math
 import hashlib
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, Any, Union
 
 
 def get_text_embedding(text: str, dim: int = 64) -> List[float]:
-    """Generates a normalized deterministic vector embedding for text."""
+    """
+    Generates a deterministic normalized embedding vector for the given text.
+    Handles case-insensitivity, basic tokenization, and hashing.
+    """
     tokens = text.lower().strip().split()
+    if not tokens:
+        return [0.0] * dim
+
     vec = [0.0] * dim
     for token in tokens:
         h = int(hashlib.md5(token.encode('utf-8')).hexdigest(), 16)
         for i in range(dim):
             vec[i] += ((h >> (i % 32)) & 1) * 2 - 1
-            
-    # L2 normalize
-    mag = math.sqrt(sum(x * x for x in vec)) or 1.0
+
+    # L2 Normalization to unit length
+    mag = math.sqrt(sum(x * x for x in vec))
+    if mag == 0.0:
+        return [0.0] * dim
     return [x / mag for x in vec]
 
 
+# Test suite compatibility alias
+compute_deterministic_embedding = get_text_embedding
+
+
 def cosine_similarity(v1: List[float], v2: List[float]) -> float:
-    """Calculates cosine similarity between two unit vectors."""
-    return sum(a * b for a, b in zip(v1, v2))
+    """
+    Computes cosine similarity between two unit-normalized vectors.
+    Returns a float between -1.0 and 1.0.
+    """
+    if not v1 or not v2 or len(v1) != len(v2):
+        return 0.0
+    return float(sum(a * b for a, b in zip(v1, v2)))
 
 
 class SemanticCache:
@@ -28,57 +45,64 @@ class SemanticCache:
         self.threshold = similarity_threshold
         self.max_entries = max_entries
         self.capacity = max_entries
-        self.entries: List[Tuple[str, List[float], List[str]]] = []
+        # Entries structure: list of tuples -> (query_text, embedding_vector, stored_value)
+        self.entries: List[Tuple[str, List[float], Any]] = []
 
-    def lookup(self, query: str) -> Optional[List[str]]:
-        query_vec = get_text_embedding(query)
-        for cached_q, cached_vec, chunks in self.entries:
-            sim = cosine_similarity(query_vec, cached_vec)
-            if sim >= self.similarity_threshold:
-                return chunks
-        return None
-
-    # Alias for get
-    def get(self, query: str) -> Optional[List[str]]:
-        return self.lookup(query)
-
-    def store(self, query: str, response_chunks: List[str]) -> None:
+    def put(self, query: str, value: Any) -> None:
+        """
+        Stores query, its vector embedding, and response value in the cache.
+        Supports FIFO eviction when max capacity is reached.
+        """
+        query_vec = compute_deterministic_embedding(query)
         if len(self.entries) >= self.max_entries:
             self.entries.pop(0)
-        self.entries.append((query, get_text_embedding(query), response_chunks))
+        self.entries.append((query, query_vec, value))
 
-    # SemanticCache class ke andar add karein:
-    def put(self, query: str, response):
-        """Alias for test compatibility"""
-        # Agar response string hai aur chunks chahiye, ya list hai
-        if isinstance(response, str):
-            # chunks list me convert ya direct store
-            response_chunks = [response]
-        else:
-            response_chunks = response
-            
-        if hasattr(self, 'store'):
-            self.store(query, response_chunks)
-        elif hasattr(self, 'set'):
-            self.set(query, response_chunks)
-        else:
-            # direct append fallback
-            if len(self.entries) >= getattr(self, 'max_entries', 100):
-                self.entries.pop(0)
-            self.entries.append((query, compute_deterministic_embedding(query), response_chunks))
+    def get(self, query: str) -> Tuple[Optional[Any], float]:
+        """
+        Calculates similarity with all cached queries.
+        Returns a tuple: (hit_val, score) as required by the test suite.
+        If threshold is not met, returns (None, score).
+        """
+        if not self.entries:
+            return None, 0.0
 
-    def get(self, query: str):
-        """Alias for lookup"""
-        if hasattr(self, 'lookup'):
-            res = self.lookup(query)
-            if res is not None and isinstance(res, list) and len(res) == 1:
-                return res[0]
-            return res
+        query_vec = compute_deterministic_embedding(query)
+        best_score = -1.0
+        best_val = None
+
+        for cached_q, cached_vec, stored_val in self.entries:
+            sim = cosine_similarity(query_vec, cached_vec)
+            if sim > best_score:
+                best_score = sim
+                best_val = stored_val
+
+        # Check against similarity threshold
+        if best_score >= self.similarity_threshold:
+            return best_val, round(best_score, 4)
+
+        return None, round(max(0.0, best_score), 4)
+
+    # -------------------------------------------------------------
+    # Compatibility Methods for Gateway Server (app.py)
+    # -------------------------------------------------------------
+    def lookup(self, query: str) -> Optional[List[str]]:
+        """Used by app.py streaming generator."""
+        val, _ = self.get(query)
+        if val is not None:
+            if isinstance(val, str):
+                return [f"{w} " for w in val.split()]
+            if isinstance(val, list):
+                return val
+            return [str(val)]
         return None
 
-    # Alias for set
-    def set(self, query: str, response_chunks: List[str]) -> None:
-        self.store(query, response_chunks)
+    def store(self, query: str, response_chunks: Any) -> None:
+        """Used by app.py to save streamed chunks."""
+        self.put(query, response_chunks)
 
-# Alias for test suite compatibility
-compute_deterministic_embedding = get_text_embedding
+    def set(self, query: str, value: Any) -> None:
+        self.put(query, value)
+
+    def clear(self) -> None:
+        self.entries.clear()
