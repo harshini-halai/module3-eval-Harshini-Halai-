@@ -50,3 +50,6 @@ class SemanticCache:
     # Alias for set
     def set(self, query: str, response_chunks: List[str]) -> None:
         self.store(query, response_chunks)
+
+# Alias for test suite compatibility
+compute_deterministic_embedding = get_text_embedding
